@@ -1,5 +1,5 @@
 # simple_program_synthesis
-FOPL 课期末大作业，仿照 (POPL'11 的一篇文章)[https://www.microsoft.com/en-us/research/wp-content/uploads/2016/12/popl11-synthesis.pdf)-w-
+FOPL 课期末大作业，仿照 [POPL'11 的一篇文章](https://www.microsoft.com/en-us/research/wp-content/uploads/2016/12/popl11-synthesis.pdf)
 
 类似于 Excel 里的自动填充，不过主要是对字符串的处理。
 
