@@ -4,9 +4,9 @@ FOPL 课期末大作业，仿照 [POPL'11 的一篇文章](https://www.microsoft
 类似于 Excel 里的自动填充，不过主要是对字符串的处理。
 
 ## 运行
-请使用 Python3
+用 Python2 运行
 ```
-Python final.py
+python2 final.py
 ```
 
 ## 说明
