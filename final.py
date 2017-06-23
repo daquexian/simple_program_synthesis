@@ -72,6 +72,9 @@ class Token(object):
     def __hash__(self):
         return hash(str(self))
 
+    def __eq__(self, other):
+        return isinstance(other, self.__class__)
+
     @abc.abstractmethod
     def reg_str(self):
         return
@@ -80,9 +83,6 @@ class Token(object):
 class StartToken(Token):
     def __init__(self):
         super(StartToken, self).__init__()
-
-    def __eq__(self, other):
-        return isinstance(other, StartToken)
 
     def __repr__(self):
         return "StartToken"
@@ -98,9 +98,6 @@ class EndToken(Token):
     def __init__(self):
         super(EndToken, self).__init__()
 
-    def __eq__(self, other):
-        return isinstance(other, EndToken)
-
     def __repr__(self):
         return "EndToken"
 
@@ -115,9 +112,6 @@ class AlphaToken(Token):
     def __init__(self):
         super(AlphaToken, self).__init__()
 
-    def __eq__(self, other):
-        return isinstance(other, AlphaToken)
-
     def __repr__(self):
         return "AlphaToken"
 
@@ -130,9 +124,6 @@ class AlphaToken(Token):
 class NumToken(Token):
     def __init__(self):
         super(NumToken, self).__init__()
-
-    def __eq__(self, other):
-        return isinstance(other, NumToken)
 
     def __repr__(self):
         return "NumToken"
@@ -148,9 +139,6 @@ class SpaceToken(Token):
     def __init__(self):
         super(SpaceToken, self).__init__()
 
-    def __eq__(self, other):
-        return isinstance(other, SpaceToken)
-
     def __repr__(self):
         return "SpaceToken"
 
@@ -165,9 +153,6 @@ class UpperToken(Token):
     def __init__(self):
         super(UpperToken, self).__init__()
 
-    def __eq__(self, other):
-        return isinstance(other, UpperToken)
-
     def __repr__(self):
         return "UpperToken"
 
@@ -181,9 +166,6 @@ class UpperToken(Token):
 class LowerToken(Token):
     def __init__(self):
         super(LowerToken, self).__init__()
-
-    def __eq__(self, other):
-        return isinstance(other, LowerToken)
 
     def __repr__(self):
         return "LowerToken"
@@ -231,7 +213,7 @@ class ConstStr(Expression):
         return hash(self.s)
 
     def __cmp__(self, other):
-        return cmp(self.s, other.s)
+        return self.s.__cmp__(other.s)
 
     def __repr__(self):
         return "<ConstStr: " + str(self.s) + ">"
@@ -263,7 +245,7 @@ class CPos(object):
         return hash(self.pos)
 
     def __cmp__(self, other):
-        return cmp(self.pos, other.pos)
+        return self.pos.__cmp__(other.pos)
 
     def __repr__(self):
         return "<CPos: " + str(self.pos) + ">"
@@ -297,6 +279,8 @@ class Pos(object):
             if match_start(string[i:], tokens2)[0] and match_end(string[:i], tokens1)[0]:
                 matches.append(i)
 
+        if len(matches) == 0:
+            return None
         return matches[next(iter(self.c))]
 
 
@@ -544,54 +528,48 @@ def apply_path(operations, string):
             ind1 = p1.match(string)
             ind2 = p2.match(string)
 
+            if ind1 is None or ind2 is None:
+                return None
+
             res = res + string[ind1: ind2]
 
     return res
 
-
-i = 0
-iparts = dict()
-dag = None
-while True:
-    l = sys.stdin.readline().strip()
-    if l == '':
-        break
-    long_str, sub_str = l.split(",")
-    iparts[long_str] = calculate_iparts(long_str)
-    this_dag = generate_str((long_str,), sub_str)
-    if dag is None:
-        dag = this_dag
-    else:
-        dag = intersect(dag, this_dag)
-
-paths = dag.get_path()
-if len(paths) > 0:
-    path = min(paths, key=len)
-    edges = [next(iter(dag.w[k])) for k in path]
-    print(edges)
-
+if __name__ == "__main__":
+    i = 0
+    iparts = dict()
+    dag = None
     while True:
-        long_str = sys.stdin.readline()
-        print(apply_path(edges, long_str))
-        print("\n")
-else:
-    print("Can't handle it")
+        l = sys.stdin.readline().strip()
+        if l == '':
+            break
+        long_str, sub_str = l.split(",")
+        iparts[long_str] = calculate_iparts(long_str)
+        this_dag = generate_str((long_str,), sub_str)
+        if dag is None:
+            dag = this_dag
+        else:
+            dag = intersect(dag, this_dag)
 
-s1 = '123abcd122'
-s2 = 'basdfcc56721'
-s3 = 'aaccee531bcaee6671'
-s4 = 'beac4124ddEDS412bcw888'
-s5 = 'ccca23va3214bcac66123'
+    paths = dag.get_path()
+    if len(paths) > 0:
+        # path = min(paths, key=len)
+        paths = sorted(paths, key=len)
+        for path in paths:
+            edges = [next(iter(dag.w[k])) for k in path]
+            print(edges)
 
-iparts = {k: calculate_iparts(k) for k in (s1, s2, s3, s4)}
+        while True:
+            long_str = sys.stdin.readline()
+            for path in paths:
+                edges = [next(iter(dag.w[k])) for k in path]
+                res = apply_path(edges, long_str)
+                if res is not None:
+                    print(res)
+                    break
+            else:
+                print("Can't handle it")
 
-dag1 = generate_str((s1,), "122")
-# dag2 = generate_str((s1,), "122")
-dag2 = generate_str((s2,), "56721")
-dag3 = generate_str((s3,), "6671")
-dag4 = generate_str((s4,), "888")
+    else:
+        print("Can't handle it")
 
-dag = reduce(intersect, (dag1, dag2, dag3, dag4))
-# dag = intersect(intersect(intersect(dag1, dag2), dag3), dag4)
-
-paths = dag.get_path()
