@@ -1,6 +1,8 @@
-import sys, abc, re
+import abc
+import re
+import sys
+from collections import defaultdict
 from itertools import product
-from functools import reduce
 
 
 class Dag(object):
@@ -28,6 +30,20 @@ class Dag(object):
                     ret.append(path)
         return ret
 
+    def generate(self, original_str):
+        paths = self.get_path()
+        result_dict = defaultdict(int)
+        if len(paths) > 0:
+            for path in paths:
+                # edges = [next(iter(self.w[k])) for k in path]
+                potential_edge_lists = product(*[self.w[k] for k in path])
+                for edge_list in potential_edge_lists:
+                    res = apply_path(edge_list, original_str)
+                    if res is not None:
+                        for k, v in res.items():
+                            result_dict[k] += v
+        return result_dict
+
     def __get_path(self, path):
         last_edge = path[-1]
         if last_edge.b == self.dest:
@@ -39,6 +55,10 @@ class Dag(object):
                     return True
                 path.pop(-1)
         return False
+
+    def get_simples(self):
+        list1 = []
+
 
 
 class Edge(object):
@@ -108,6 +128,20 @@ class EndToken(Token):
         return r"$"
 
 
+class NullToken(Token):
+    def __init__(self):
+        super(NullToken, self).__init__()
+
+    def __repr__(self):
+        return "NullToken"
+
+    def __str__(self):
+        return self.__repr__()
+
+    def reg_str(self):
+        return r""
+
+
 class AlphaToken(Token):
     def __init__(self):
         super(AlphaToken, self).__init__()
@@ -120,6 +154,7 @@ class AlphaToken(Token):
 
     def reg_str(self):
         return r"(?<![A-Za-z])[A-Za-z]+(?![A-Za-z])"
+
 
 class NumToken(Token):
     def __init__(self):
@@ -188,7 +223,7 @@ class Expression(object):
 
 
 class Substr(Expression):
-    def __init__(self, p1, p2):
+    def __init__(self, p1: set, p2: set) -> None:
         super(Substr, self).__init__()
         self.vi = 0
         self.p1 = p1
@@ -199,6 +234,9 @@ class Substr(Expression):
 
     def __str__(self):
         return self.__repr__()
+
+    def get_simples(self):
+        return [Substr({item1}, {item2}) for item1 in self.p1 for item2 in self.p2]
 
 
 class ConstStr(Expression):
@@ -221,42 +259,54 @@ class ConstStr(Expression):
     def __str__(self):
         return self.__repr__()
 
+    def get_simples(self):
+        return [self]
+
 
 class Loop(Expression):
-    def __init__(self, exp):
+    def __init__(self, dag: Dag):
         super(Loop, self).__init__()
-        self.exp = exp
+        self.dag = dag
 
     def __eq__(self, other):
-        return self.exp == other.exp
+        return self.dag == other.dag
 
     def __hash__(self):
-        return hash(self.exp)
+        return hash(self.dag)
+
+    def __repr__(self):
+        return "<Loop: " + str(self.dag) + ">"
+
+    def __str__(self):
+        return self.__repr__()
 
 
 class CPos(object):
-    def __init__(self, pos):
+    def __init__(self, pos, delta=0):
         self.pos = pos
+        self.delta = delta
 
     def __eq__(self, other):
-        return self.pos == other.pos
+        return self.pos == other.pos and self.delta == self.delta
 
-    def __hash__(self):
-        return hash(self.pos)
+    def __hash__(self) -> int:
+        return hash(self.pos) * 31 + hash(self.delta)
 
     def __cmp__(self, other):
         return self.pos.__cmp__(other.pos)
 
     def __repr__(self):
-        return "<CPos: " + str(self.pos) + ">"
+        return "<CPos: " + str(self.pos) + (", " + str(self.delta) if self.delta != 0 else "") + ">"
 
     def __str__(self):
         return self.__repr__()
 
-    def match(self, str):
-        if self.pos < 0:
-            return len(str) + self.pos + 1
-        return self.pos
+    def match(self, s):
+        if -len(s) - 1 <= self.pos < 0:
+            return {len(s) + self.pos + 1}
+        elif 0 <= self.pos < len(s):
+            return {self.pos}
+        return None
 
 
 class Pos(object):
@@ -275,16 +325,21 @@ class Pos(object):
         tokens2 = tuple((item[0] for item in self.reg_list2))
 
         matches = []
-        for i in range(len(string)):
-            if match_start(string[i:], tokens2)[0] and match_end(string[:i], tokens1)[0]:
+        for i in range(len(string) + 1):
+            if match_start(string, i, tokens2)[0] and match_end(string, i, tokens1)[0]:
                 matches.append(i)
 
         if len(matches) == 0:
             return None
-        return matches[next(iter(self.c))]
+
+        res = set((matches[i] for i in self.c if -len(matches) <= i < len(matches)))
+        if len(res) == 0:
+            return None
+
+        return res
 
 
-def intersect_pos(pos_set1, pos_set2):
+def intersect_pos(pos_set1, pos_set2, is_unity=False):
     res = set()
 
     for op1 in pos_set1:
@@ -292,10 +347,15 @@ def intersect_pos(pos_set1, pos_set2):
             if isinstance(op1, CPos) and isinstance(op2, CPos):
                 if op1 == op2:
                     res.add(CPos(op1.pos))
+                if op1 != op2 and is_unity and 0 <= op1.pos < op2.pos or op2.pos < op1.pos < 0:
+                    res.add(CPos(op1.pos, op2.pos - op1.pos))
             elif isinstance(op1, Pos) and isinstance(op2, Pos):
                 rl1 = intersect_regex(op1.reg_list1, op2.reg_list1)
                 rl2 = intersect_regex(op1.reg_list2, op2.reg_list2)
-                c = op1.c.intersection(op2.c)
+                if is_unity:
+                    c = set([CPos(p1, p2 - p1) for p1 in op1.c for p2 in op2.c if 0 <= p1 < p2 or p2 < p1 < 0])
+                else:
+                    c = op1.c.intersection(op2.c)
                 if rl1 is not None and rl2 is not None and len(c) > 0:
                     res.add(Pos(rl1,
                                 rl2,
@@ -317,7 +377,7 @@ def intersect_regex(rl1, rl2):
     return res
 
 
-def intersect(op1, op2):
+def intersect(op1, op2, is_unity=False):
     res = None
 
     if isinstance(op1, Dag) and isinstance(op2, Dag):
@@ -325,22 +385,23 @@ def intersect(op1, op2):
         res.edges = list((Edge(edge1.a + edge2.a, edge1.b + edge2.b) for
                           edge1, edge2 in product(op1.edges, op2.edges)))
         res.w = {Edge(edge1.a + edge2.a, edge1.b + edge2.b): set(
-            filter(lambda x: x is not None, (intersect(f1, f2) for f1 in op1.w[edge1] for f2 in op2.w[edge2])))
+            filter(lambda x: x is not None, (intersect(f1, f2, is_unity) for f1 in op1.w[edge1] for f2 in op2.w[edge2])))
             for edge1, edge2 in product(op1.edges, op2.edges)}
         res.w = {k: v for k, v in res.w.items() if len(v) > 0}
         res.edges = res.w.keys()
 
     elif isinstance(op1, Substr) and isinstance(op2, Substr):
+        # this condition is useless -- all vi are equal now
         if op1.vi == op2.vi:
-            p1 = intersect_pos(op1.p1, op2.p1)
-            p2 = intersect_pos(op1.p2, op2.p2)
+            p1 = intersect_pos(op1.p1, op2.p1, is_unity)
+            p2 = intersect_pos(op1.p2, op2.p2, is_unity)
             if len(p1) > 0 and len(p2) > 0:
                 res = Substr(p1, p2)
     elif isinstance(op1, ConstStr) and isinstance(op2, ConstStr):
         if op1 == op2:
             res = op1
     elif isinstance(op1, Loop) and isinstance(op2, Loop):
-        res = Loop(intersect(op1.exp, op2.exp))
+        res = Loop(intersect(op1.dag, op2.dag, is_unity))
 
     return res
 
@@ -372,8 +433,27 @@ def generate_partition(T):
             pass
 
 
+# I don't plan to support multiple input string
 def generate_loop(sigma, s, W):
     # type: (list(str), str, dict) -> dict
+
+    original_str = sigma[0]
+    for k1 in range(len(s)):
+        for k2 in range(k1 + 1, len(s)):
+            for k3 in range(k2 + 1, len(s) + 1):
+                e1 = generate_str(sigma, s[k1:k2])
+                e2 = generate_str(sigma, s[k2:k3])
+                e = intersect(e1, e2, True)
+
+                l = [Loop(e)]
+                res_str_dict = apply_path(l, original_str)
+                if '' in res_str_dict:
+                    res_str_dict.pop('')
+                if res_str_dict is not None and len(res_str_dict) > 0:
+                    res_str = max(res_str_dict, key=lambda x: res_str_dict[x])
+                    if s.startswith(res_str, k1):
+                        W[Edge((k1,), (k1 + len(res_str),))].add(Loop(e))
+
     return W
 
 
@@ -398,31 +478,31 @@ def generate_substring(sigma, substr):
     return res
 
 
-def generate_position(s, k):
+def generate_position(s: str, k: int) -> set:
     res = {CPos(k), CPos(-(len(s) - k + 1))}
 
-    reps = (t[0] for t in calculate_iparts(s))
+    reps = list(t[0] for t in calculate_iparts(s))
 
     n = 1
     rl1 = []
     rl2 = []
     pos1 = []
     pos2 = []
-    while True:
+    while n <= 1:
         matched = False
         temp_rl = tuple(product(*((reps,) * n)))
         for r in temp_rl:
-            match_res = match_end(s[:k], r)
+            match_res = match_end(s, k, r)
             if match_res[0]:
                 matched = True
                 rl1.append(r)
                 pos1.append(match_res[1])
 
-            match_res = match_start(s[k:], r)
+            match_res = match_start(s, k, r)
             if match_res[0]:
                 matched = True
                 rl2.append(r)
-                pos2.append(k + match_res[2])
+                pos2.append(match_res[2])
 
         n += 1
 
@@ -437,6 +517,10 @@ def generate_position(s, k):
             if res_item[1] == pos1[x] and res_item[2] == pos2[y]:
                 r1 = generate_regex(rl1[x], s)
                 r2 = generate_regex(rl2[y], s)
+                if len(r1) == 1 and len(r2) == 1:
+                    if (NullToken() in r1[0] and NullToken() in r2[0]) or (StartToken() in r1[0] and StartToken() in r2[0])\
+                            or (EndToken() in r1[0] and EndToken() in r2[0]):
+                        continue
                 # res.add(Pos(r1, r2, {i, -(len(match_res) - i + 1)}))
                 res.add(Pos(r1, r2, {i, -(len(match_res) - i)}))
 
@@ -459,18 +543,6 @@ def generate_regex(r, s):
 def get_reg_str(token_list):
     reg_str = ""
     for item in token_list:
-        '''
-        if isinstance(item, StartToken):
-            reg_str += r"^"
-        elif isinstance(item, AlphaToken):
-            reg_str += r"(?<![A-Za-z])[A-Za-z]+(?![A-Za-z])"
-        elif isinstance(item, NumToken):
-            reg_str += r"(?<!\d)\d+(?!\d)"
-        elif isinstance(item, EndToken):
-            reg_str += r"$"
-        elif isinstance(item, SpaceToken):
-            reg_str += r"(?<! ) +(?! )"
-            '''
         reg_str += item.reg_str()
 
     return reg_str
@@ -482,58 +554,126 @@ def match(s, reg):
     return list(((m.group(0), m.start(), m.end()) for m in re.finditer(reg_str, s)))
 
 
-def match_start(s, token_list):
-    reg_str = get_reg_str(token_list)
+def match_start(s: str, i: int, token_list: tuple) -> list:
+    pattern = get_reg_str(token_list)
 
-    m = re.match(reg_str, s)
+    for m in re.finditer(pattern, s):
+        if m.start() == i:
+            res = [True, m.start(), m.end()]
+            return res
 
-    res = []
-    if m is not None:
-        res.append(True)
-        res.append(m.start())
-        res.append(m.end())
-    else:
-        res.append(False)
-
-    return res
+    return [False]
 
 
-def match_end(s, token_list):
-    reg_str = get_reg_str(token_list) + r"$"
+def match_end(s: str, i: int, token_list: tuple) -> list:
+    pattern = get_reg_str(token_list)
 
-    m = re.search(reg_str, s)
+    for m in re.finditer(pattern, s):
+        if m.end() == i:
+            res = [True, m.start(), m.end()]
+            return res
 
-    res = []
-    if m is not None:
-        res.append(True)
-        res.append(m.start())
-        res.append(m.end())
-    else:
-        res.append(False)
-
-    return res
+    return [False]
 
 
 def calculate_iparts(s):
-    return (NumToken(),), (AlphaToken(),), (StartToken(),), (EndToken(),), (SpaceToken(),), (UpperToken(),), (LowerToken(),)
+    return (NumToken(),), (AlphaToken(),), (StartToken(),), (EndToken(),), (SpaceToken(),), (UpperToken(),), (
+        LowerToken(),), (NullToken(),)
 
 
 def apply_path(operations, string):
-    # type: (list, str) -> str
-    res = ''
+    # type: (list, str) -> dict()
+    res = defaultdict(int)
+    res[''] = 0
     for op in operations:
-        if isinstance(op, Substr):
-            p1 = next(iter(op.p1))
-            p2 = next(iter(op.p2))
-            ind1 = p1.match(string)
-            ind2 = p2.match(string)
+        this_res = defaultdict(int)
+        if isinstance(op, ConstStr):
+            this_res[op.s] += 1
+        elif isinstance(op, Substr):
+            for p1 in op.p1:
+                for p2 in op.p2:
+                    ind_set1 = p1.match(string)
+                    ind_set2 = p2.match(string)
 
-            if ind1 is None or ind2 is None:
-                return None
+                    if ind_set1 is None or ind_set2 is None:
+                        this_res[''] += 1
+                        continue
 
-            res = res + string[ind1: ind2]
+                    for ind1 in ind_set1:
+                        for ind2 in ind_set2:
+                            if ind1 < ind2:
+                                this_res[string[ind1: ind2]] += 1
+
+        elif isinstance(op, Loop):
+            this_res[''] = 0
+            dag = Dag(op.dag.n, op.dag.source, op.dag.dest, edges=op.dag.edges, w=dict())
+
+            t = 0
+            finished = False
+            while not finished:
+                for key in op.dag.w:
+                    new_exp_set = set()
+                    for exp in op.dag.w[key]:
+                        if isinstance(exp, Substr):
+                            new_p1 = set()
+
+                            for new_pos in exp.p1:
+                                if isinstance(new_pos, CPos):
+                                    if new_pos.delta == 0:
+                                        new_p1.add(new_pos)
+                                    new_p1.add(CPos(new_pos.pos + t * new_pos.delta))
+                                elif isinstance(new_pos, Pos):
+                                    new_c = set([x.pos + t * x.delta for x in new_pos.c
+                                                 if isinstance(x, CPos) and x.delta != 0]).union(
+                                        set([x for x in new_pos.c if not isinstance(x, CPos)])
+                                    )
+                                    if len(new_c) > 0:
+                                        new_p1.add(Pos(new_pos.reg_list1, new_pos.reg_list2,
+                                                          new_c))
+
+                            new_p2 = set()
+                            for new_pos in exp.p2:
+                                if isinstance(new_pos, CPos):
+                                    if new_pos.delta == 0:
+                                        continue
+                                    new_p2.add(CPos(new_pos.pos + t * new_pos.delta))
+                                elif isinstance(new_pos, Pos):
+                                    new_c = set([x.pos + t * x.delta for x in new_pos.c
+                                                 if isinstance(x, CPos) and x.delta != 0]).union(
+                                        set([x for x in new_pos.c if not isinstance(x, CPos)])
+                                    )
+                                    if len(new_c) > 0:
+                                        new_p2.add(Pos(new_pos.reg_list1, new_pos.reg_list2,
+                                                          new_c))
+
+                            if len(new_p1) == 0 or len(new_p2) == 0:
+                                break
+                            new_exp = Substr(new_p1, new_p2)
+                            new_exp_set.add(new_exp)
+                    dag.w[key] = new_exp_set
+                t += 1
+                matched = dag.generate(string)
+
+                if len(matched) > 0:
+                    __this_res = defaultdict(int)
+                    for k, v in this_res.items():
+                        for k2, v2 in matched.items():
+                            __this_res[k + k2] += v + v2
+
+                    this_res = __this_res
+
+                if len(matched) == 0 or (len(matched) == 1 and '' in matched):
+                    finished = True
+
+        __res = defaultdict(int)
+        for k, v in res.items():
+            for k2, v2 in this_res.items():
+                __res[k + k2] += v + v2
+        res = __res
+
 
     return res
+
 
 if __name__ == "__main__":
     i = 0
@@ -561,15 +701,11 @@ if __name__ == "__main__":
 
         while True:
             long_str = sys.stdin.readline()
-            for path in paths:
-                edges = [next(iter(dag.w[k])) for k in path]
-                res = apply_path(edges, long_str)
-                if res is not None:
-                    print(res)
-                    break
+            result = dag.generate(long_str.strip())
+            if result is not None:
+                print(max(result, key=result.get))
             else:
                 print("Can't handle it")
 
     else:
         print("Can't handle it")
-
