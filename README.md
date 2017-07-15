@@ -10,20 +10,37 @@ python3 final.py
 ```
 
 ## 说明
-程序开始运行之后手动输入一些示例，格式为`原字符串,目标字符串`，每行一个示例，如输入：
+程序开始运行之后手动输入一些示例，格式为`原字符串,目标字符串`（不需要空格），每行一个示例，如输入：
 ```
-Central Intelligence Agency,CIA
-National Security Agency,NSA
-World Wide Web,WWW
+Principles Of Programming Languages,POPL
+International Business Machines,IBM
+International Conference on Software Engineering,ICSE
 ```
 然后再输入一个空行，接着新的字符串，如：
 ```
-British Broadcasting Corporation
+Asian Symposium on Programming Languages and Systems
 ```
 
 就会得到
 ```
-BBC
+ASPLS
+```
+（其实这个会叫 APLAS）
+
+或者输入
+```
+Mike Wallace,M.W
+Alan Turing,A.T
+Donald Knuth,D.K
+```
+然后输入
+```
+Barbara Liskov
+```
+就会得到
+```
+B.L
 ```
 
-实现的很垃圾，paper 里的很多功能还没完全实现，所以可能碰到奇怪的情况，有空（不知道是什么时候了）再改
+## 已知问题
+输入的示例中的目标字符串较长（6-7个字符）时，速度会非常慢。因为`generate_loop`中对每一个满足 i < j < k 的 s[i:j] 和 s[j:k] 都尝试生成一个有限状态机，paper 中的确是这样的（并且 paper 中还有一些不正确的细节）

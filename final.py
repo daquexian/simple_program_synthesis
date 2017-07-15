@@ -406,7 +406,7 @@ def intersect(op1, op2, is_unity=False):
     return res
 
 
-def generate_str(sigma, s):
+def generate_str(sigma, s, need_loop=True):
     n = list(range(len(s) + 1))
     source = (0,)
     dest = (len(s),)
@@ -416,7 +416,8 @@ def generate_str(sigma, s):
         w = {ConstStr(s[edge.a[0]: edge.b[0]])}
         w = w.union(generate_substring(sigma, s[edge.a[0]: edge.b[0]]))
         W[edge] = w
-    W = generate_loop(sigma, s, W)
+    if need_loop:
+        W = generate_loop(sigma, s, W)
     return Dag(n, source, dest, edges, W)
 
 
@@ -441,16 +442,15 @@ def generate_loop(sigma, s, W):
     for k1 in range(len(s)):
         for k2 in range(k1 + 1, len(s)):
             for k3 in range(k2 + 1, len(s) + 1):
-                e1 = generate_str(sigma, s[k1:k2])
-                e2 = generate_str(sigma, s[k2:k3])
+                e1 = generate_str(sigma, s[k1:k2], False)
+                e2 = generate_str(sigma, s[k2:k3], False)
                 e = intersect(e1, e2, True)
 
                 l = [Loop(e)]
                 res_str_dict = apply_path(l, original_str)
                 if '' in res_str_dict:
                     res_str_dict.pop('')
-                if res_str_dict is not None and len(res_str_dict) > 0:
-                    res_str = max(res_str_dict, key=lambda x: res_str_dict[x])
+                for res_str in res_str_dict:
                     if s.startswith(res_str, k1):
                         W[Edge((k1,), (k1 + len(res_str),))].add(Loop(e))
 
@@ -647,7 +647,7 @@ def apply_path(operations, string):
                                                           new_c))
 
                             if len(new_p1) == 0 or len(new_p2) == 0:
-                                break
+                                continue
                             new_exp = Substr(new_p1, new_p2)
                             new_exp_set.add(new_exp)
                     dag.w[key] = new_exp_set
@@ -676,11 +676,15 @@ def apply_path(operations, string):
 
 
 if __name__ == "__main__":
+    DEBUG = False
+
     i = 0
     iparts = dict()
     dag = None
+
+    print("Please enter your data, e.g. World Wide Web,WWW (no space around the comma)")
     while True:
-        l = sys.stdin.readline().strip()
+        l = input().strip()
         if l == '':
             break
         long_str, sub_str = l.split(",")
@@ -691,13 +695,20 @@ if __name__ == "__main__":
         else:
             dag = intersect(dag, this_dag)
 
+        if DEBUG:
+            print("ok")
+
     paths = dag.get_path()
     if len(paths) > 0:
         # path = min(paths, key=len)
-        paths = sorted(paths, key=len)
-        for path in paths:
-            edges = [next(iter(dag.w[k])) for k in path]
-            print(edges)
+
+        if DEBUG:
+            paths = sorted(paths, key=len)
+            for path in paths:
+                edges = [next(iter(dag.w[k])) for k in path]
+                print(edges)
+        else:
+            print("Please input new strings you want to manipulate")
 
         while True:
             long_str = sys.stdin.readline()
